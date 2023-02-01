@@ -1,0 +1,35 @@
+{
+  "language": "Solidity",
+  "sources": {
+    "contracts/DeSplit.sol": {
+      "content": "// SPDX-License-Identifier: MIT\npragma solidity 0.8.17;\n\nerror Not_Enough_Eth_Sent();\nerror Address_Zero();\nerror Transfer_Failed();\nerror ZeroAmountDeposit();\nerror Insufficient_Balance();\nerror Expense_Out_of_Bounds();\nerror CallerNotPartOfExpense();\nerror Expense_Settled();\n\ncontract DeSplit {\n    struct Expense {\n        string description;\n        address payer;\n        address to;\n        address[] splitBy;\n        uint256[] splitAmount;\n    }\n\n    mapping(address => uint256) balances;\n    Expense[] private expenses;\n    // address[] private users;\n\n    /**\n     * payer\n     * to\n     * splitBy\n     * splitAmount\n     * expenseIndex\n     */\n    event PaymentExpenseCreated(\n        address,\n        address,\n        address[],\n        uint256[],\n        uint256\n    );\n    event ExpenseSettled(address, address, uint256, uint256);\n\n    function payAndCreateExpense(\n        uint256 _amount,\n        address _to,\n        string memory _description,\n        address[] memory _splitBy,\n        uint[] memory _splitAmount\n    ) external {\n        if (balances[msg.sender] <= _amount) {\n            revert Insufficient_Balance();\n        }\n        if (_to == address(0)) revert Address_Zero();\n\n        Expense memory newExpense;\n        newExpense.description = _description;\n        newExpense.payer = msg.sender;\n        newExpense.splitBy = _splitBy;\n        newExpense.splitAmount = _splitAmount;\n        newExpense.to = _to;\n\n        expenses.push(newExpense);\n\n        balances[msg.sender] -= _amount;\n\n        (bool success, ) = payable(_to).call{value: _amount}(\"\");\n        if (!success) revert Transfer_Failed();\n\n        emit PaymentExpenseCreated(\n            msg.sender,\n            _to,\n            _splitBy,\n            _splitAmount,\n            expenses.length - 1\n        );\n    }\n\n    function settleExpense(address _recipient, uint256 _expenseIndex) public {\n        if (_expenseIndex >= expenses.length) revert Expense_Out_of_Bounds();\n\n        Expense memory _expense = expenses[_expenseIndex];\n\n        // assuming that the splitBy index wont be that high\n        uint256 callerIndex = 2 ** 256 - 1;\n        for (uint256 i; i < _expense.splitBy.length; i++) {\n            if (_expense.splitBy[i] == msg.sender) {\n                callerIndex = i;\n                break;\n            }\n        }\n        // if the caller is not found to be a part of the splitBy array\n        if (callerIndex == 2 ** 256 - 1) revert CallerNotPartOfExpense();\n\n        if (balances[msg.sender] < _expense.splitAmount[callerIndex])\n            revert Insufficient_Balance();\n\n        // checking if the balance has already been settled;\n        if (_expense.splitAmount[callerIndex] == 0) revert Expense_Settled();\n\n        balances[msg.sender] -= _expense.splitAmount[callerIndex];\n        balances[_recipient] += _expense.splitAmount[callerIndex];\n\n        _expense.splitAmount[callerIndex] = 0;\n        expenses[_expenseIndex] = _expense;\n\n        emit ExpenseSettled(\n            msg.sender,\n            _recipient,\n            _expenseIndex,\n            _expense.splitAmount[callerIndex]\n        );\n    }\n\n    function getExpense(\n        uint256 _index\n    )\n        public\n        view\n        returns (\n            address,\n            address,\n            address[] memory,\n            uint256[] memory,\n            string memory\n        )\n    {\n        if (_index >= expenses.length) revert Expense_Out_of_Bounds();\n        Expense memory expense = expenses[_index];\n        return (\n            expense.payer,\n            expense.to,\n            expense.splitBy,\n            expense.splitAmount,\n            expense.description\n        );\n    }\n\n    function deposit() public payable {\n        if (msg.value == 0) revert ZeroAmountDeposit();\n        balances[msg.sender] += msg.value;\n\n        // if (users.indexOf(msg.sender) == -1) users.push(msg.sender);\n    }\n\n    function withdraw(address to, uint256 amount) public {\n        if (balances[msg.sender] <= amount) revert Insufficient_Balance();\n\n        balances[msg.sender] -= amount;\n\n        (bool success, ) = payable(to).call{value: amount}(\"\");\n        if (!success) revert Transfer_Failed();\n    }\n\n    function getbalance(address _user) public view returns (uint256) {\n        return balances[_user];\n    }\n\n    fallback() external {\n        deposit();\n    }\n}\n"
+    }
+  },
+  "settings": {
+    "optimizer": {
+      "enabled": false,
+      "runs": 200
+    },
+    "outputSelection": {
+      "*": {
+        "*": [
+          "abi",
+          "evm.bytecode",
+          "evm.deployedBytecode",
+          "evm.methodIdentifiers",
+          "metadata",
+          "devdoc",
+          "userdoc",
+          "storageLayout",
+          "evm.gasEstimates"
+        ],
+        "": [
+          "ast"
+        ]
+      }
+    },
+    "metadata": {
+      "useLiteralContent": true
+    }
+  }
+}
